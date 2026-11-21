@@ -60,3 +60,4 @@ target
 # Homestead
 tests/build/
 app/romfs/homestead_ips/*.ips
+app/SHA256SUMS.txt
