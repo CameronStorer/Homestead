@@ -8,6 +8,7 @@
 #include "common.hpp"
 #include "states/LumaValidation.hpp"
 #include "states/MainUI.hpp"
+#include "homestead/homestead.hpp"
 
 MainStruct mainStruct = MainStruct();
 
@@ -29,14 +30,14 @@ static void sceneInit(void)
 	C2D_SpriteSetPos(&mainStruct.top, 400/2, 240/2);
 	C2D_SpriteSetPos(&mainStruct.go_back, 0, 214);
 	C2D_SpriteSetPos(&mainStruct.header, 95, 14);
-	C2D_SpriteSetPos(&mainStruct.pretendo_loaded_selected, 49, 59);
-	C2D_SpriteSetPos(&mainStruct.pretendo_unloaded_selected, 49, 59);
-	C2D_SpriteSetPos(&mainStruct.pretendo_unloaded_deselected, 49, 59);
-	C2D_SpriteSetPos(&mainStruct.pretendo_loaded_deselected, 49, 59);
-	C2D_SpriteSetPos(&mainStruct.nintendo_loaded_selected, 165, 59);
-	C2D_SpriteSetPos(&mainStruct.nintendo_unloaded_selected, 165, 59);
-	C2D_SpriteSetPos(&mainStruct.nintendo_unloaded_deselected, 165, 59);
-	C2D_SpriteSetPos(&mainStruct.nintendo_loaded_deselected, 165, 59);
+	C2D_SpriteSetPos(&mainStruct.pretendo_loaded_selected, BUTTON_X_PRETENDO, BUTTON_Y);
+	C2D_SpriteSetPos(&mainStruct.pretendo_unloaded_selected, BUTTON_X_PRETENDO, BUTTON_Y);
+	C2D_SpriteSetPos(&mainStruct.pretendo_unloaded_deselected, BUTTON_X_PRETENDO, BUTTON_Y);
+	C2D_SpriteSetPos(&mainStruct.pretendo_loaded_deselected, BUTTON_X_PRETENDO, BUTTON_Y);
+	C2D_SpriteSetPos(&mainStruct.nintendo_loaded_selected, BUTTON_X_NINTENDO, BUTTON_Y);
+	C2D_SpriteSetPos(&mainStruct.nintendo_unloaded_selected, BUTTON_X_NINTENDO, BUTTON_Y);
+	C2D_SpriteSetPos(&mainStruct.nintendo_unloaded_deselected, BUTTON_X_NINTENDO, BUTTON_Y);
+	C2D_SpriteSetPos(&mainStruct.nintendo_loaded_deselected, BUTTON_X_NINTENDO, BUTTON_Y);
 	
 	textBuf = C2D_TextBufNew(4096); // initialize the text buffer with a max glyph count of 4096
 }
@@ -44,6 +45,7 @@ static void sceneInit(void)
 int main()
 {
 	// Initialize the libs
+	romfsInit(); // real-hardware patch templates live in romfs:/homestead_ips
 	nsInit();
 	ndmuInit();
 	frdInit(false);
@@ -74,10 +76,21 @@ int main()
 	// NULL-terminate string
 	mainStruct.errorString[0] = 0;
 
+	Homestead::loadServer();
+
 	// Main loop
 	while (aptMainLoop()) {
 		bool exit = false;
-		
+
+		// The system keyboard is an applet and must open between frames
+		if (mainStruct.wantServerPrompt) {
+			mainStruct.wantServerPrompt = false;
+			mainStruct.errorString[0] = 0;
+			if (Homestead::promptServer(&mainStruct)) {
+				mainStruct.buttonSelected = Homestead::ENVIRONMENT;
+			}
+		}
+
 		// get any input, and if applicable the location where the screen was touched
 		hidScanInput();
 		touchPosition touch;
@@ -121,6 +134,7 @@ int main()
 	}
 
 	nsExit();
+	romfsExit();
 
 	return 0;
 }

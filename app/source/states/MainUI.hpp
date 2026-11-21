@@ -15,5 +15,6 @@ namespace MainUI
     void openPrompt(MainStruct* mainStruct, const std::string& message, PromptStatus promptStatus);
     void updatePrompt(MainStruct* mainStruct, u32 kDown);
     void drawPrompt(MainStruct* mainStruct);
+    void drawCustomButton(MainStruct* mainStruct);
     bool drawUI(MainStruct *mainStruct, C3D_RenderTarget* top_screen, C3D_RenderTarget* bottom_screen, u32 kDown, u32 kHeld, touchPosition touch);
 }

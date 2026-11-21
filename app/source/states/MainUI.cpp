@@ -14,6 +14,7 @@
 #include "../sysmodules/acta.hpp"
 #include "../sysmodules/httpc.hpp"
 #include "../plgldr.h"
+#include "../homestead/homestead.hpp"
 
 constexpr Result ResultFPDLocalAccountNotExists = 0xC880C4ED; // FPD::LocalAccountNotExists
 const char *NIMBUS_PLUGIN = "/luma/plugins/nimbus.3gx";
@@ -500,6 +501,37 @@ void MainUI::drawPrompt(MainStruct* mainStruct)
                  0.5f, 0.5f, white);
 }
 
+// The custom-server button, drawn with shapes so it needs no extra artwork.
+// It mirrors the stock buttons: a white outline when selected and a green
+// bar when it is the account in use.
+void MainUI::drawCustomButton(MainStruct* mainStruct)
+{
+    const float x = BUTTON_X_CUSTOM, y = BUTTON_Y, w = BUTTON_W, h = BUTTON_H;
+    const bool selected = mainStruct->buttonSelected == Homestead::ENVIRONMENT;
+    const bool loaded = mainStruct->currentAccount == Homestead::ENVIRONMENT;
+    const u32 fill = selected ? C2D_Color32(64, 120, 84, 255) : C2D_Color32(44, 62, 52, 255);
+    const u32 white = C2D_Color32(255, 255, 255, 255);
+
+    C2D_DrawRectSolid(x, y, 0.5f, w, h, fill);
+    if (selected) {
+        C2D_DrawRectSolid(x, y, 0.5f, w, 2, white);
+        C2D_DrawRectSolid(x, y + h - 2, 0.5f, w, 2, white);
+        C2D_DrawRectSolid(x, y, 0.5f, 2, h, white);
+        C2D_DrawRectSolid(x + w - 2, y, 0.5f, 2, h, white);
+    }
+    if (loaded) {
+        C2D_DrawRectSolid(x + 8, y + h - 12, 0.5f, w - 16, 4, C2D_Color32(120, 220, 140, 255));
+    }
+
+    const std::string& address = Homestead::server();
+    const std::string label = std::format("Custom\nserver\n\n{}", address.empty() ? "(not set)" : address);
+    C2D_Text text;
+    C2D_TextBufClear(textBuf);
+    C2D_TextFontParse(&text, font, textBuf, label.c_str());
+    C2D_TextOptimize(&text);
+    C2D_DrawText(&text, C2D_WithColor | C2D_AlignCenter | C2D_WordWrap, x + w / 2, y + 14, 0.5f, 0.5f, 0.5f, white, w - 8);
+}
+
 bool MainUI::drawUI(MainStruct *mainStruct, C3D_RenderTarget* top_screen, C3D_RenderTarget* bottom_screen, u32 kDown, u32 kHeld, touchPosition touch)
 {
     C2D_SceneBegin(top_screen);
@@ -710,24 +742,52 @@ bool MainUI::drawUI(MainStruct *mainStruct, C3D_RenderTarget* top_screen, C3D_Re
             C2D_DrawSprite(&mainStruct->pretendo_unloaded_selected);
         }
     }
+    else {
+        // Custom server selected: draw both stock buttons deselected
+        C2D_DrawSprite(mainStruct->currentAccount == NascEnvironment::NASC_ENV_Prod ? &mainStruct->nintendo_loaded_deselected : &mainStruct->nintendo_unloaded_deselected);
+        C2D_DrawSprite(mainStruct->currentAccount == NascEnvironment::NASC_ENV_Test ? &mainStruct->pretendo_loaded_deselected : &mainStruct->pretendo_unloaded_deselected);
+    }
+    drawCustomButton(mainStruct);
     C2D_DrawSprite(&mainStruct->header);
     drawPrompt(mainStruct);
 
     // Only allow user interaction when the system doesn't need a restart
     if (!mainStruct->needsReboot && !mainStruct->prompt.active) {
         // handle touch input
+        // Buttons left to right: Pretendo, Nintendo, Custom server
+        static constexpr NascEnvironment order[3] = {NascEnvironment::NASC_ENV_Test, NascEnvironment::NASC_ENV_Prod, Homestead::ENVIRONMENT};
+        static constexpr int buttonX[3] = {BUTTON_X_PRETENDO, BUTTON_X_NINTENDO, BUTTON_X_CUSTOM};
+        int selectedIndex = 0;
+        for (int i = 0; i < 3; i++) {
+            if (order[i] == mainStruct->buttonSelected) selectedIndex = i;
+        }
+
         if (kDown & KEY_TOUCH) {
-            if ((touch.px >= 165 && touch.px <= 165 + 104) && (touch.py >= 59 && touch.py <= 59 + 113)) {
-                mainStruct->buttonSelected = NascEnvironment::NASC_ENV_Prod;
-                mainStruct->buttonWasPressed = true;
-            }
-            else if ((touch.px >= 49 && touch.px <= 49 + 104) && (touch.py >= 59 && touch.py <= 59 + 113)) {
-                mainStruct->buttonSelected = NascEnvironment::NASC_ENV_Test;
-                mainStruct->buttonWasPressed = true;
+            for (int i = 0; i < 3; i++) {
+                if (touch.px >= buttonX[i] && touch.px <= buttonX[i] + BUTTON_W && touch.py >= BUTTON_Y && touch.py <= BUTTON_Y + BUTTON_H) {
+                    mainStruct->buttonSelected = order[i];
+                    mainStruct->buttonWasPressed = true;
+                }
             }
         }
-        else if (kDown & KEY_LEFT || kDown & KEY_RIGHT) {
-            mainStruct->buttonSelected = mainStruct->buttonSelected == NascEnvironment::NASC_ENV_Test ? NascEnvironment::NASC_ENV_Prod : NascEnvironment::NASC_ENV_Test;
+        else if (kDown & KEY_LEFT) {
+            mainStruct->buttonSelected = order[(selectedIndex + 2) % 3];
+        }
+        else if (kDown & KEY_RIGHT) {
+            mainStruct->buttonSelected = order[(selectedIndex + 1) % 3];
+        }
+
+        if (kDown & KEY_SELECT) {
+            // The keyboard applet can't open mid-frame; main() opens it
+            mainStruct->wantServerPrompt = true;
+            return false;
+        }
+
+        // Choosing the custom server without an address asks for one first
+        if (mainStruct->buttonWasPressed && mainStruct->buttonSelected == Homestead::ENVIRONMENT && Homestead::server().empty()) {
+            mainStruct->buttonWasPressed = false;
+            mainStruct->wantServerPrompt = true;
+            return false;
         }
 
         if (mainStruct->prompt.active) {
@@ -779,21 +839,25 @@ bool MainUI::drawUI(MainStruct *mainStruct, C3D_RenderTarget* top_screen, C3D_Re
         // If the chosen account is the one we are already logged into, exit without rebooting
         if (mainStruct->currentAccount == mainStruct->buttonSelected) return true;
 
-        u8 accountId = (u8)mainStruct->buttonSelected + 1; // by default set accountId to nasc environment + 1
+        u8 accountId = (u8)mainStruct->buttonSelected + 1; // 1 = Nintendo, 2 = Pretendo, 3 = custom server
 
-        Result rc = unloadAccount(mainStruct);
-        if (R_SUCCEEDED(rc)) {
-            rc = switchAccounts(mainStruct, accountId);
-            if (rc == ResultFPDLocalAccountNotExists && accountId == 2) {
-                // Clear the error to allow createAccount to override it
-                memset(mainStruct->errorString, 0, 256);
-                rc = createAccount(mainStruct, accountId, NascEnvironment::NASC_ENV_Test);
-            }
+        // Route URLs before switching, so a missing address or patch fails
+        // without logging the console out of its current account.
+        Result rc = Homestead::applyRouting(mainStruct, accountId);
+        if (R_FAILED(rc)) {
+            LOGF_NIMBUS_ERROR(mainStruct, "Failed to apply server configuration: %08lx", rc);
+            mainStruct->buttonWasPressed = false;
+            return false;
         }
 
+        rc = unloadAccount(mainStruct);
         if (R_SUCCEEDED(rc)) {
-            rc = handleAzahar(accountId);
-            LOG_NIMBUS_ERROR(mainStruct, std::format("Failed to apply Azahar configuration: {}", rc).c_str());
+            rc = switchAccounts(mainStruct, accountId);
+            if (rc == ResultFPDLocalAccountNotExists && accountId != 1) {
+                // Clear the error to allow createAccount to override it
+                memset(mainStruct->errorString, 0, 256);
+                rc = createAccount(mainStruct, accountId, Homestead::environmentOf(accountId));
+            }
         }
 
         if (R_FAILED(rc)) {

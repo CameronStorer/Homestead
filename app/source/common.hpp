@@ -10,7 +10,15 @@
 #include <algorithm>
 #include <string>
 
-#define NIMBUS_UPDATE_PATH "/3ds/nimbus/update"
+#define NIMBUS_UPDATE_PATH "/3ds/homestead/update"
+
+// Bottom-screen account buttons (the stock artwork is 104x113)
+constexpr int BUTTON_W = 104;
+constexpr int BUTTON_H = 113;
+constexpr int BUTTON_Y = 59;
+constexpr int BUTTON_X_PRETENDO = 2;
+constexpr int BUTTON_X_NINTENDO = 108;
+constexpr int BUTTON_X_CUSTOM = 214;
 
 enum class NascEnvironment : u8 {
 	NASC_ENV_Prod = 0, // nintendo
@@ -81,6 +89,7 @@ struct MainStruct {
 	bool needsReboot = false;
 	bool updateChecked = false;
 	bool repairChecked = false;
+	bool wantServerPrompt = false; // open the keyboard after this frame
 
 	char errorString[256];
 

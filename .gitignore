@@ -57,3 +57,6 @@ target
 
 # MacOS
 .DS_Store
+# Homestead
+tests/build/
+app/romfs/homestead_ips/*.ips

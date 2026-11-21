@@ -31,19 +31,19 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-APP_TITLE       := 	Nimbus
-APP_DESCRIPTION := 	Nimbus
-APP_AUTHOR	:=	Zaksabeast, shutterbug2000
-TARGET		:=	nimbus
+APP_TITLE       := 	Homestead
+APP_DESCRIPTION := 	Personal 3DS servers (Nimbus fork)
+APP_AUTHOR	:=	CameronStorer, Pretendo Network
+TARGET		:=	homestead
 BUILD		:=	build
-SOURCES		:=	source source/states source/sysmodules
+SOURCES		:=	source source/states source/sysmodules source/homestead
 DATA		:=	data
 INCLUDES	:=	include
 ROMFS		:=	romfs
 GRAPHICS	:=	$(ROMFS)/gfx
 GFXBUILD 	:=  $(BUILD)
 
-RSF_FILE := meta/nimbus-cia.rsf
+RSF_FILE := meta/homestead-cia.rsf
 
 ICON      := meta/icon.png
 BNR_IMAGE := meta/banner.png
