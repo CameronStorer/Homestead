@@ -21,6 +21,21 @@ const char *NIMBUS_PLUGIN = "/luma/plugins/nimbus.3gx";
 const char *NIMBUS_PLUGIN_MAGIC = "NMBS";
 constexpr u32 NIMBUS_PLUGIN_VERSION = SYSTEM_VERSION(1, 0, 0);
 
+// See the pidHMAC migration in drawUI: off in Homestead.
+constexpr bool PRETENDO_REPAIR_ENABLED = false;
+constexpr const char *PIDHMAC_MARKER_DIR = "/3ds/nimbus";
+constexpr const char *PIDHMAC_MARKER = "/3ds/nimbus/.pidhmac";
+
+// Creates Nimbus's "pidHMAC repair done" marker. Nimbus assumed /3ds/nimbus
+// exists; without it fopen returns NULL and fclose(NULL) crashed the app.
+static void touchPidHmacMarker() {
+    mkdir("/3ds", 0777);
+    mkdir(PIDHMAC_MARKER_DIR, 0777);
+    if (auto* marker = std::fopen(PIDHMAC_MARKER, "wb")) {
+        std::fclose(marker);
+    }
+}
+
 Result retPNID = 0;
 u32 pnidAccountSlot = 0;
 AccountId pnid = {};
@@ -596,19 +611,21 @@ bool MainUI::drawUI(MainStruct *mainStruct, C3D_RenderTarget* top_screen, C3D_Re
         }
     }
 
-    // Handle the pidHMAC fix migration (except if an error occured previously)
-    if (!mainStruct->repairChecked && (mainStruct->errorString[0] == 0 || strncmp(mainStruct->errorString, "Nimbus has been updated!", sizeof("Nimbus has been updated!")) == 0)) {
+    // Handle the pidHMAC fix migration (except if an error occured previously).
+    // Homestead leaves this Pretendo account maintenance to Nimbus: it signs the
+    // console out, takes Wi-Fi offline and reboots, which a user switching to
+    // their own server never asked for.
+    if (PRETENDO_REPAIR_ENABLED && !mainStruct->repairChecked && (mainStruct->errorString[0] == 0 || strncmp(mainStruct->errorString, "Nimbus has been updated!", sizeof("Nimbus has been updated!")) == 0)) {
         mainStruct->repairChecked = true;
         u32 pretendo_account_index = 0;
         // Logs won't override any previous errors
         Result rc = 0;
         handleResult(ACT_GetAccountIndexOfFriendAccountId(&pretendo_account_index, 2), mainStruct, "Get PNID for repair check");
         if (pretendo_account_index == 0) { // If an account doesn't exist, we just create the dummy file. The friends server will provide the pidHMAC
-            auto* pidHMACFixCheck = std::fopen("/3ds/nimbus/.pidhmac", "wb");
-            std::fclose(pidHMACFixCheck);
+            touchPidHmacMarker();
         }
 
-        if (auto* pidHMACFixCheck = std::fopen("/3ds/nimbus/.pidhmac", "rb"); !pidHMACFixCheck) {
+        if (auto* pidHMACFixCheck = std::fopen(PIDHMAC_MARKER, "rb"); !pidHMACFixCheck) {
             mainStruct->errorString[0] = 0; // Clear potential previous error
             // TODO - This thing isn't drawn when Nimbus required an update beforehand. How do we make this text render in that case?
             // For now, we put a hint on the upgrade screen about Internet requirements
@@ -620,8 +637,7 @@ bool MainUI::drawUI(MainStruct *mainStruct, C3D_RenderTarget* top_screen, C3D_Re
                     // Clear the error as it is not necessary
                     memset(mainStruct->errorString, 0, 256);
 
-                    pidHMACFixCheck = std::fopen("/3ds/nimbus/.pidhmac", "wb");
-                    std::fclose(pidHMACFixCheck);
+                    touchPidHmacMarker();
                 } else {
                     // Leave the exclusive state as we need HTTP communications
                     handleResult(NDMU_LeaveExclusiveState(), mainStruct, "Leave exclusive state");
@@ -670,8 +686,7 @@ bool MainUI::drawUI(MainStruct *mainStruct, C3D_RenderTarget* top_screen, C3D_Re
 
                     if (!pidHMAC.empty()) {
                         if (repairAccountHMAC(mainStruct, pidHMAC.substr(0, 8).c_str())) {
-                            pidHMACFixCheck = std::fopen("/3ds/nimbus/.pidhmac", "wb");
-                            std::fclose(pidHMACFixCheck);
+                            touchPidHmacMarker();
                         }
                     }
                 }
