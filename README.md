@@ -1,3 +1,41 @@
+# Homestead
+## Personal server switcher for the 3DS
+
+Homestead is a fork of [Pretendo Network's Nimbus](https://github.com/PretendoNetwork/nimbus). Next to the
+Nintendo and Pretendo accounts it adds a **Custom server** account that points at any server address you type
+in, so you can run your own private online service instead of a mainstream one.
+
+It is not affiliated with Pretendo Network or Nintendo. Please don't ask Pretendo for help with Homestead.
+
+### Status
+
+| | |
+| --- | --- |
+| Azahar (HLE HTTP) | Custom server works with any address |
+| Real 3DS | **Not yet.** The sysmodule patches with long-address slots still need to be built (see below) |
+| Nintendo / Pretendo accounts | Unchanged from Nimbus |
+
+### How it works
+
+- The custom server uses its own friend account (slot 3, NASC environment Dev), so switching never deletes your
+  Nintendo or Pretendo account.
+- Press **SELECT** to enter the address: a hostname (`isle.example.org`) or an IPv4 address (`100.64.0.10`),
+  up to 63 characters. It is saved to `/3ds/homestead/server.txt`.
+- Every Nintendo host name (`*.nintendowifi.net`, `*.nintendo.net`, `*.pokemon-gl.com`) is sent to that one
+  address. Your server tells the services apart by URL path, so no wildcard DNS is needed.
+- On real hardware, Homestead fills your address into sysmodule IPS templates and installs them to
+  `/luma/sysmodules` (anything already there is backed up once to `/3ds/homestead/ips-backup`).
+
+> **Security:** like Nimbus, the SSL patch turns off certificate checking. Only connect to servers you trust,
+> on networks you trust.
+
+### Building
+
+Same as Nimbus below, plus `3ds-jansson`. The app builds on its own (`make -C app`); the real-hardware
+templates go in `app/romfs/homestead_ips/` once built. Host-side tests: `sh tests/run.sh`.
+
+---
+
 # Nimbus
 ## Pretendo account manager for the 3DS
 
