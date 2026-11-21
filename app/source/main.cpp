@@ -9,6 +9,7 @@
 #include "states/LumaValidation.hpp"
 #include "states/MainUI.hpp"
 #include "homestead/homestead.hpp"
+#include "homestead/trace.hpp"
 
 MainStruct mainStruct = MainStruct();
 
@@ -77,6 +78,8 @@ int main()
 	mainStruct.errorString[0] = 0;
 
 	Homestead::loadServer();
+	int tracedFrames = 1000; // frames traced after the keyboard closes
+	HS_TRACE("start: server='%s' env=%d", Homestead::server().c_str(), (int)nascEnvironment);
 
 	// Main loop
 	while (aptMainLoop()) {
@@ -86,10 +89,14 @@ int main()
 		if (mainStruct.wantServerPrompt) {
 			mainStruct.wantServerPrompt = false;
 			mainStruct.errorString[0] = 0;
+			HS_TRACE("prompt: open");
 			if (Homestead::promptServer(&mainStruct)) {
 				mainStruct.buttonSelected = Homestead::ENVIRONMENT;
 			}
+			HS_TRACE("prompt: back in main loop, error='%s'", mainStruct.errorString);
+			tracedFrames = 0;
 		}
+		if (tracedFrames < 5) HS_TRACE("frame %d: begin", tracedFrames);
 
 		// get any input, and if applicable the location where the screen was touched
 		hidScanInput();
@@ -117,6 +124,7 @@ int main()
 		mainStruct.firstRunOfState = false;
 		
 		C3D_FrameEnd(0);
+		if (tracedFrames < 5) HS_TRACE("frame %d: end", tracedFrames++);
 		
 		if (exit) break;
 	}

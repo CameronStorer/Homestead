@@ -68,6 +68,9 @@ CFLAGS	    :=	-g -Wall $(OPTIMIZE) -mword-relocations \
 			    $(ARCH)
 
 CFLAGS	    +=	$(INCLUDE) -D__3DS__
+ifdef HOMESTEAD_TRACE
+CFLAGS	+=	-DHOMESTEAD_TRACE
+endif
 
 CXXFLAGS	:=  $(CFLAGS) -fno-rtti -fno-exceptions -std=c++20
 

@@ -1,8 +1,10 @@
 #include "homestead.hpp"
 #include "ips.hpp"
+#include "trace.hpp"
 #include "../states/MainUI.hpp"
 #include "../sysmodules/httpc.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdio>
@@ -23,14 +25,18 @@ namespace Homestead {
         // Every Nintendo host is sent to the one server address, so a
         // personal server needs no wildcard DNS and can be a bare IP. The
         // server tells services apart by URL path.
-        constexpr std::array<const char *, 3> AZAHAR_PATTERNS = {{
+        constexpr std::array<const char *, 4> AZAHAR_PATTERNS = {{
             "^.*nintendowifi\\.net$",
             "^.*nintendo\\.net$",
             "^.*pokemon-gl\\.com$",
+            "^.*pretendo\\.cc$",
         }};
 
-        // Real-hardware patch templates bundled in the app (built from the
-        // sysmodule patches with PLACEHOLDER slots, see patches/README.md).
+        // Real-hardware patch templates bundled in the app, built by
+        // patches/homestead/build_patches.py:
+        //   standard/ Nimbus's patches unchanged (Nintendo and Pretendo)
+        //   custom/   Nimbus's patches plus the custom-server redirect, with
+        //             PLACEHOLDER slots that are filled with the address
         struct PatchFile {
             const char *titleId;
         };
@@ -41,7 +47,10 @@ namespace Homestead {
             {"0004013000002E02"}, // socket
             {"0004013000002F02"}, // ssl
         }};
-        constexpr const char *PATCH_TEMPLATE_DIR = "romfs:/homestead_ips/";
+        constexpr const char *PATCH_SET_STANDARD = "romfs:/homestead_ips/standard/";
+        constexpr const char *PATCH_SET_CUSTOM = "romfs:/homestead_ips/custom/";
+        // Which set Homestead last installed ("custom" or "standard")
+        constexpr const char *PATCH_SET_MARKER = "sdmc:/3ds/homestead/installed-set.txt";
         constexpr const char *PATCH_TARGET_DIR = "sdmc:/luma/sysmodules/";
         constexpr const char *PATCH_BACKUP_DIR = "sdmc:/3ds/homestead/ips-backup/";
 
@@ -118,7 +127,14 @@ namespace Homestead {
         // patches with the server address filled in. The patches only
         // redirect the Dev-environment account, so Nintendo and Pretendo
         // accounts keep working with them installed.
-        Result installPatches(MainStruct *mainStruct) {
+        bool customSetInstalled() {
+            std::vector<u8> data;
+            static const char custom[] = "custom";
+            return readFile(PATCH_SET_MARKER, data) && data.size() >= 6 && std::equal(custom, custom + 6, data.begin());
+        }
+
+        Result installPatches(MainStruct *mainStruct, bool custom) {
+            const char *templateDir = custom ? PATCH_SET_CUSTOM : PATCH_SET_STANDARD;
             mkdir("sdmc:/luma", 0777);
             mkdir("sdmc:/luma/sysmodules", 0777);
             mkdir(DATA_DIR, 0777);
@@ -128,12 +144,16 @@ namespace Homestead {
             std::vector<std::vector<u8>> filled;
             for (const PatchFile &file : PATCH_FILES) {
                 std::vector<u8> ips;
-                if (!readFile(std::string(PATCH_TEMPLATE_DIR) + file.titleId + ".ips", ips)) {
-                    LOG_NIMBUS_ERROR(mainStruct, "This build of Homestead has no real-hardware patches yet. The custom server currently works on Azahar only.");
+                if (!readFile(std::string(templateDir) + file.titleId + ".ips", ips)) {
+                    LOGF_NIMBUS_ERROR(mainStruct, "Missing patch template %s%s.ips", templateDir, file.titleId);
                     return ResultPatchesMissing;
                 }
                 std::string error;
-                if (Ips::fillSlots(ips, Ips::PLACEHOLDER, currentServer, error) < 0) {
+                if (custom && Ips::fillSlots(ips, Ips::PLACEHOLDER, currentServer, error) < 0) {
+                    LOGF_NIMBUS_ERROR(mainStruct, "Patch %s: %s", file.titleId, error.c_str());
+                    return ResultPatchFailed;
+                }
+                if (!Ips::validate(ips, error)) {
                     LOGF_NIMBUS_ERROR(mainStruct, "Patch %s: %s", file.titleId, error.c_str());
                     return ResultPatchFailed;
                 }
@@ -155,6 +175,8 @@ namespace Homestead {
                     return ResultPatchFailed;
                 }
             }
+            const std::string marker = custom ? "custom\n" : "standard\n";
+            writeFile(PATCH_SET_MARKER, std::vector<u8>(marker.begin(), marker.end()));
             return 0;
         }
 
@@ -251,8 +273,11 @@ namespace Homestead {
         swkbdSetHintText(&swkbd, "Server address, e.g. isle.example.org");
         swkbdSetInitialText(&swkbd, currentServer.c_str());
         swkbdSetValidation(&swkbd, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
-        swkbdSetFeatures(&swkbd, SWKBD_PREDICTIVE_INPUT | SWKBD_DEFAULT_QWERTY);
-        if (swkbdInputText(&swkbd, buffer, sizeof(buffer)) != SWKBD_BUTTON_CONFIRM) {
+        swkbdSetFeatures(&swkbd, SWKBD_DEFAULT_QWERTY);
+        HS_TRACE("swkbd: input start");
+        const SwkbdButton button = swkbdInputText(&swkbd, buffer, sizeof(buffer));
+        HS_TRACE("swkbd: returned button=%d result=%d text='%s'", (int)button, (int)swkbdGetResult(&swkbd), buffer);
+        if (button != SWKBD_BUTTON_CONFIRM) {
             return false;
         }
 
@@ -262,10 +287,12 @@ namespace Homestead {
             LOG_NIMBUS_ERROR(mainStruct, error.c_str());
             return false;
         }
+        HS_TRACE("swkbd: normalized '%s', saving", address.c_str());
         if (!saveServer(address)) {
             LOG_NIMBUS_ERROR(mainStruct, "Could not save the server address to the SD card.");
             return false;
         }
+        HS_TRACE("swkbd: saved");
         LOGF_NIMBUS_ERROR(mainStruct, "Custom server set to %s", address.c_str());
         return true;
     }
@@ -291,9 +318,12 @@ namespace Homestead {
             // LLE HTTP on Azahar: fall through to the IPS patches.
         }
 
-        // The patches redirect only the Dev-environment account, so they are
-        // only (re)written when the custom server is chosen.
-        if (friend_account_id != ACCOUNT_ID) return 0;
-        return installPatches(mainStruct);
+        // The custom set redirects the Dev-environment account to the server
+        // and points Nintendo's NAT-test hosts at it. Switching away puts
+        // Nimbus's standard patches back, but only when Homestead's custom
+        // set is what is installed: a console without Nimbus stays untouched.
+        if (friend_account_id == ACCOUNT_ID) return installPatches(mainStruct, true);
+        if (customSetInstalled()) return installPatches(mainStruct, false);
+        return 0;
     }
 }
